@@ -1,0 +1,114 @@
+## Triggers when push ##
+trigger:
+  - develop
+  - stagging
+  - master
+
+resources:
+- repo: self
+  ## Variables ##
+variables:
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+    imageRepository: 'globantassessmentbp'
+    envinromentDeploy: 'RepoGlobantAssessmentBP.default'
+    kubernetesServiceConnection: 'aks-ps-glb-globant'
+  ${{ elseif eq(variables['Build.SourceBranch'], 'refs/heads/stagging') }}:
+    imageRepository: 'globantassessment-stagg'
+    envinromentDeploy: 'RepoGlobantAssessmentBP.default-stag'
+    kubernetesServiceConnection: 'aks-ps-glb-globant-stag'
+  ${{ elseif eq(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+    imageRepository: 'globantassessment-prod'
+    envinromentDeploy: 'RepoGlobantAssessmentBP.default-prod'
+    kubernetesServiceConnection: 'aks-ps-glb-globant-prod'
+
+  
+  dockerRegistryServiceConnection: '382c3640-d1e1-45ab-9c7d-9a69c150445f'
+  containerRegistry: 'acrpsglobant.azurecr.io'
+  dockerfilePath: '**/Dockerfile.prod'
+  tag: '$(Build.BuildId)'
+  imagePullSecret: 'acrpsglobantd313-auth'
+  vmImageName: 'ubuntu-latest'
+  buildConfiguration: 'Release'
+  ####
+
+  
+## Build ##
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: Docker@2
+      displayName: Build and push an image to ACR GlobantAssessment
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(tag)
+    - task: CopyFiles@2
+      displayName: Copy k8s yml
+      inputs:
+        SourceFolder: 'k8s/'
+        Contents: '**/*.yml'
+        TargetFolder: '$(Pipeline.Workspace)/k8s'
+      
+    - task: PublishPipelineArtifact@1
+      inputs:
+       targetPath: '$(Pipeline.Workspace)/k8s'
+       artifact: 'k8s'
+       publishLocation: 'pipeline'
+ 
+    ## Test ##
+- stage: Test
+  displayName: Tests stage
+  dependsOn: Build
+  jobs:
+  - job: Test
+    displayName: Test
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: DotNetCoreCLI@2
+      displayName: Test Build
+      inputs:
+        command: test
+        projects: '**/Tests.GlobantAssessment/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --collect "Code coverage"'
+
+        ## Deploy ##
+- stage: Deploy
+  displayName: Deploy stage
+  dependsOn: Test
+
+  jobs:
+  - deployment: Deploy
+    displayName: Deploy
+    pool:
+      vmImage: $(vmImageName)
+    environment: $(envinromentDeploy)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: KubernetesManifest@0
+            displayName: Create imagePullSecret
+            inputs:
+              action: createSecret
+              secretName: $(imagePullSecret)
+              dockerRegistryEndpoint: $(dockerRegistryServiceConnection)
+
+          - task: KubernetesManifest@0
+            displayName: Deploy to Kubernetes cluster
+            inputs:
+              action: 'deploy'
+              kubernetesServiceConnection: $(kubernetesServiceConnection)
+              namespace: 'globant'
+              manifests: '$(Pipeline.Workspace)/k8s/k8s-aks.yml'
+              containers: '$(containerRegistry)/$(imageRepository):$(tag)'
+              imagePullSecrets: '$(imagePullSecret)'

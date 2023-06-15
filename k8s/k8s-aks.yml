@@ -1,0 +1,42 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: globantassessment 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globantassessment
+  template:
+    metadata:
+      labels:
+        app: globantassessment 
+    spec:
+      containers:
+        - name: globantassessment 
+          image: acrpsglobant.azurecr.io/globantassessmentbp
+          ports:
+          - containerPort: 80
+---
+kind: Service
+apiVersion: v1
+metadata:
+    name: globantassessment
+spec:
+    type: LoadBalancer
+    ports:
+    - port: 80 
+    selector:
+        app: globantassessment
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: globant-hpa
+spec:
+  maxReplicas: 2
+  minReplicas: 2
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: globantassessment
