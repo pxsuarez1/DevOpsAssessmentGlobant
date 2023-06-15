@@ -6,7 +6,7 @@ trigger:
 
 resources:
 - repo: self
-  ## Variables ##
+  ## dynamic Variables ##
 variables:
   ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
     imageRepository: 'globantassessmentbp'
@@ -21,7 +21,7 @@ variables:
     envinromentDeploy: 'RepoGlobantAssessmentBP.default-prod'
     kubernetesServiceConnection: 'aks-ps-glb-globant-prod'
 
-  
+    ## static Variables ##
   dockerRegistryServiceConnection: '382c3640-d1e1-45ab-9c7d-9a69c150445f'
   containerRegistry: 'acrpsglobant.azurecr.io'
   dockerfilePath: '**/Dockerfile.prod'
